@@ -247,6 +247,26 @@ private final class RecordingURLProtocol: URLProtocol {
         #expect(record?.hasSyncedLyrics == true)
 }
 
+@Test func lyricsRecordDecodesFractionalDurationValues() throws {
+    let json = #"""
+        {
+            "id": 3396226,
+            "trackName": "I Want to Live",
+            "artistName": "Borislav Slavov",
+            "albumName": "Baldur's Gate 3 (Original Game Soundtrack)",
+            "duration": 340.741224,
+            "instrumental": false,
+            "plainLyrics": "I feel your breath upon my neck",
+            "syncedLyrics": "[00:01.00] I feel your breath upon my neck\n[00:02.50] The clock won't stop"
+        }
+    """#.data(using: .utf8)!
+
+        let record = try JSONDecoder().decode(LyricsRecord.self, from: json)
+
+        #expect(record.duration == 341)
+        #expect(record.parsedSyncedLyrics?.lines.count == 2)
+}
+
 @Test func searchSyncedFiltersUnsyncedResults() async throws {
         let searchJSON = """
         [

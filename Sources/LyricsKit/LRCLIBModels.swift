@@ -130,6 +130,68 @@ public struct LyricsRecord: Codable, Sendable, Hashable, Identifiable {
     public var lyricLines: [LyricLine]? {
         parsedSyncedLyrics?.lines
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case trackName
+        case artistName
+        case albumName
+        case duration
+        case instrumental
+        case plainLyrics
+        case syncedLyrics
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        id = try container.decode(Int.self, forKey: .id)
+        trackName = try container.decode(String.self, forKey: .trackName)
+        artistName = try container.decode(String.self, forKey: .artistName)
+        albumName = try container.decode(String.self, forKey: .albumName)
+        duration = try Self.decodeDuration(from: container)
+        instrumental = try container.decode(Bool.self, forKey: .instrumental)
+        plainLyrics = try container.decodeIfPresent(String.self, forKey: .plainLyrics)
+        syncedLyrics = try container.decodeIfPresent(String.self, forKey: .syncedLyrics)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        try container.encode(id, forKey: .id)
+        try container.encode(trackName, forKey: .trackName)
+        try container.encode(artistName, forKey: .artistName)
+        try container.encode(albumName, forKey: .albumName)
+        try container.encode(duration, forKey: .duration)
+        try container.encode(instrumental, forKey: .instrumental)
+        try container.encodeIfPresent(plainLyrics, forKey: .plainLyrics)
+        try container.encodeIfPresent(syncedLyrics, forKey: .syncedLyrics)
+    }
+
+    private static func decodeDuration(from container: KeyedDecodingContainer<CodingKeys>) throws -> Int {
+        if let integerDuration = try? container.decode(Int.self, forKey: .duration) {
+            return integerDuration
+        }
+
+        if let doubleDuration = try? container.decode(Double.self, forKey: .duration),
+           doubleDuration.isFinite {
+            return Int(doubleDuration.rounded())
+        }
+
+        if let stringDuration = try? container.decode(String.self, forKey: .duration),
+           let doubleDuration = Double(stringDuration),
+           doubleDuration.isFinite {
+            return Int(doubleDuration.rounded())
+        }
+
+        throw DecodingError.typeMismatch(
+            Int.self,
+            DecodingError.Context(
+                codingPath: container.codingPath + [CodingKeys.duration],
+                debugDescription: "Expected a numeric duration from LRCLIB."
+            )
+        )
+    }
 }
 
 public struct ParsedLyrics: Codable, Sendable, Hashable {
