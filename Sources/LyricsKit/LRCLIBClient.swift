@@ -10,7 +10,7 @@ public actor LRCLIBClient {
 
         public init(
             baseURL: URL = URL(string: "https://lrclib.net/api")!,
-            minimumRequestInterval: TimeInterval = 0.35,
+            minimumRequestInterval: TimeInterval = 0.15,
             timeoutInterval: TimeInterval = 30,
             userAgent: String? = "LyricsKit/1.0"
         ) {
@@ -111,25 +111,27 @@ public actor LRCLIBClient {
     }
 
     public func bestLyrics(for signature: TrackSignature) async throws -> LyricsRecord? {
-        do {
-            let exact = try await lyrics(for: signature)
-            guard !exact.hasSyncedLyrics else {
-                return exact
-            }
+        async let exactResult: LyricsRecord? = try? lyrics(for: signature)
+        async let searchResult: [LyricsRecord] = (try? search(
+            trackName: signature.trackName,
+            artistName: signature.artistName,
+            albumName: signature.albumName
+        )) ?? []
 
-            let searchResults = try await search(
-                trackName: signature.trackName,
-                artistName: signature.artistName,
-                albumName: signature.albumName
-            )
+        let (exact, results) = await (exactResult, searchResult)
 
-            guard let bestSearch = searchResults.bestMatch(for: signature) else {
-                return exact
-            }
+        if let exact, exact.hasSyncedLyrics {
+            return exact
+        }
 
+        guard let bestSearch = results.bestMatch(for: signature) else {
+            return exact
+        }
+
+        if let exact {
             return bestSearch.matchScore(for: signature) >= exact.matchScore(for: signature) ? bestSearch : exact
-        } catch LyricsKitError.notFound {
-            return try await searchBestMatch(for: signature)
+        } else {
+            return bestSearch
         }
     }
 
@@ -214,49 +216,99 @@ public actor LRCLIBClient {
 
     private func request<T: Decodable>(_ endpoint: Endpoint) async throws -> T {
         try endpoint.validate()
+
+        let maxRetries = 2
+        var lastError: Error?
+
+        for attempt in 0 ... maxRetries {
+            if attempt > 0 {
+                let delay = UInt64(pow(2.0, Double(attempt - 1)) * 1_000_000_000)
+                LyricsDebugLogger.log("LRCLIB: Retrying request (attempt \(attempt)/\(maxRetries)) after \(Double(delay) / 1_000_000_000)s...")
+                try await Task.sleep(nanoseconds: delay)
+            }
+
+            do {
+                return try await performRequest(endpoint)
+            } catch {
+                lastError = error
+
+                if error is CancellationError { throw error }
+
+                let shouldRetry: Bool = if let kitError = error as? LyricsKitError {
+                    switch kitError {
+                    case let .httpError(statusCode, _, _):
+                        (500 ... 599).contains(statusCode)
+                    case .transport:
+                        true
+                    default:
+                        false
+                    }
+                } else if let urlError = error as? URLError {
+                    switch urlError.code {
+                    case .timedOut, .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet:
+                        true
+                    default:
+                        false
+                    }
+                } else {
+                    false
+                }
+
+                if !shouldRetry {
+                    throw error
+                }
+            }
+        }
+
+        throw lastError ?? LyricsKitError.invalidResponse
+    }
+
+    private func performRequest<T: Decodable>(_ endpoint: Endpoint) async throws -> T {
         try Task.checkCancellation()
         try await rateLimiter.waitIfNeeded()
         try Task.checkCancellation()
 
         let request = try makeRequest(for: endpoint)
+        if let url = request.url {
+            LyricsDebugLogger.log("Sending request to LRCLIB: \(url.path)")
+        }
 
-        do {
-            let (data, response) = try await session.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw LyricsKitError.invalidResponse
-            }
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw LyricsKitError.invalidResponse
+        }
 
-            switch httpResponse.statusCode {
-            case 200...299:
-                do {
-                    return try decoder.decode(T.self, from: data)
-                } catch let decodingError as DecodingError {
-                    throw LyricsKitError.decodingFailed(message: String(describing: decodingError))
-                } catch {
-                    throw LyricsKitError.decodingFailed(message: error.localizedDescription)
-                }
-            case 404:
-                throw LyricsKitError.notFound(Self.decodeErrorPayload(from: data, decoder: decoder))
-            case 429:
-                let retryAfter = Self.retryAfterSeconds(from: httpResponse)
-                let payload = Self.decodeErrorPayload(from: data, decoder: decoder)
-                await rateLimiter.penalize(retryAfter: retryAfter)
-                throw LyricsKitError.rateLimited(retryAfter: retryAfter, payload: payload)
-            default:
-                throw LyricsKitError.httpError(
-                    statusCode: httpResponse.statusCode,
-                    payload: Self.decodeErrorPayload(from: data, decoder: decoder),
-                    retryAfter: Self.retryAfterSeconds(from: httpResponse)
-                )
+        LyricsDebugLogger.log("LRCLIB response status: \(httpResponse.statusCode)")
+
+        switch httpResponse.statusCode {
+        case 200 ... 299:
+            do {
+                let decoded = try decoder.decode(T.self, from: data)
+                LyricsDebugLogger.log("LRCLIB request succeeded (\(data.count) bytes)")
+                return decoded
+            } catch let decodingError as DecodingError {
+                LyricsDebugLogger.log("LRCLIB decoding failed: \(decodingError.localizedDescription)")
+                throw LyricsKitError.decodingFailed(message: String(describing: decodingError))
+            } catch {
+                LyricsDebugLogger.log("LRCLIB decoding failed: \(error.localizedDescription)")
+                throw LyricsKitError.decodingFailed(message: error.localizedDescription)
             }
-        } catch let error as CancellationError {
-            throw error
-        } catch let error as URLError where error.code == .cancelled {
-            throw CancellationError()
-        } catch let error as URLError {
-            throw LyricsKitError.transport(code: error.errorCode, message: error.localizedDescription)
-        } catch {
-            throw LyricsKitError.transport(code: (error as NSError).code, message: error.localizedDescription)
+        case 404:
+            LyricsDebugLogger.log("LRCLIB resource not found")
+            throw LyricsKitError.notFound(Self.decodeErrorPayload(from: data, decoder: decoder))
+        case 429:
+            let retryAfter = Self.retryAfterSeconds(from: httpResponse)
+            LyricsDebugLogger.log("LRCLIB rate limited, retry after: \(retryAfter ?? 0)s")
+            let payload = Self.decodeErrorPayload(from: data, decoder: decoder)
+            await rateLimiter.penalize(retryAfter: retryAfter)
+            throw LyricsKitError.rateLimited(retryAfter: retryAfter, payload: payload)
+        default:
+            LyricsDebugLogger.log("LRCLIB HTTP error: \(httpResponse.statusCode)")
+            throw LyricsKitError.httpError(
+                statusCode: httpResponse.statusCode,
+                payload: Self.decodeErrorPayload(from: data, decoder: decoder),
+                retryAfter: Self.retryAfterSeconds(from: httpResponse)
+            )
         }
     }
 
@@ -301,7 +353,8 @@ public actor LRCLIBClient {
 
     private static func retryAfterSeconds(from response: HTTPURLResponse) -> TimeInterval? {
         guard let headerValue = response.value(forHTTPHeaderField: "Retry-After")?.lyricsKitTrimmed,
-              !headerValue.isEmpty else {
+              !headerValue.isEmpty
+        else {
             return nil
         }
 
@@ -343,22 +396,22 @@ public actor LRCLIBClient {
         var pathComponents: [String] {
             switch self {
             case .trackSignature:
-                return ["get"]
+                ["get"]
             case let .trackID(id):
-                return ["get", String(id)]
+                ["get", String(id)]
             case .search:
-                return ["search"]
+                ["search"]
             }
         }
 
         var queryItems: [URLQueryItem] {
             switch self {
             case let .trackSignature(signature):
-                return signature.normalized().queryItems
+                signature.normalized().queryItems
             case .trackID:
-                return []
+                []
             case let .search(query):
-                return query.normalized().queryItems
+                query.normalized().queryItems
             }
         }
     }

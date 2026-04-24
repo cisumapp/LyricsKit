@@ -37,7 +37,7 @@ public struct TrackSignature: Codable, Sendable, Hashable {
             URLQueryItem(name: "track_name", value: normalized.trackName),
             URLQueryItem(name: "artist_name", value: normalized.artistName),
             URLQueryItem(name: "album_name", value: normalized.albumName),
-            URLQueryItem(name: "duration", value: String(normalized.durationInSeconds))
+            URLQueryItem(name: "duration", value: String(normalized.durationInSeconds)),
         ]
     }
 }
@@ -145,14 +145,14 @@ public struct LyricsRecord: Codable, Sendable, Hashable, Identifiable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
-        id = try container.decode(Int.self, forKey: .id)
-        trackName = try container.decode(String.self, forKey: .trackName)
-        artistName = try container.decode(String.self, forKey: .artistName)
-        albumName = try container.decode(String.self, forKey: .albumName)
-        duration = try Self.decodeDuration(from: container)
-        instrumental = try container.decode(Bool.self, forKey: .instrumental)
-        plainLyrics = try container.decodeIfPresent(String.self, forKey: .plainLyrics)
-        syncedLyrics = try container.decodeIfPresent(String.self, forKey: .syncedLyrics)
+        self.id = try container.decode(Int.self, forKey: .id)
+        self.trackName = try container.decode(String.self, forKey: .trackName)
+        self.artistName = try container.decode(String.self, forKey: .artistName)
+        self.albumName = try container.decode(String.self, forKey: .albumName)
+        self.duration = try Self.decodeDuration(from: container)
+        self.instrumental = try container.decode(Bool.self, forKey: .instrumental)
+        self.plainLyrics = try container.decodeIfPresent(String.self, forKey: .plainLyrics)
+        self.syncedLyrics = try container.decodeIfPresent(String.self, forKey: .syncedLyrics)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -174,13 +174,15 @@ public struct LyricsRecord: Codable, Sendable, Hashable, Identifiable {
         }
 
         if let doubleDuration = try? container.decode(Double.self, forKey: .duration),
-           doubleDuration.isFinite {
+           doubleDuration.isFinite
+        {
             return Int(doubleDuration.rounded())
         }
 
         if let stringDuration = try? container.decode(String.self, forKey: .duration),
            let doubleDuration = Double(stringDuration),
-           doubleDuration.isFinite {
+           doubleDuration.isFinite
+        {
             return Int(doubleDuration.rounded())
         }
 
@@ -238,7 +240,7 @@ public struct ParsedLyrics: Codable, Sendable, Hashable {
         guard let first = lines.first?.timestamp, let last = lines.last?.timestamp else {
             return nil
         }
-        return first...last
+        return first ... last
     }
 
     public func progress(at playbackTime: TimeInterval, within duration: TimeInterval? = nil) -> Double? {
@@ -286,7 +288,8 @@ public struct ParsedLyrics: Codable, Sendable, Hashable {
 
     private static func timestamp(from match: NSTextCheckingResult, in line: String) -> TimeInterval? {
         guard let minutes = string(in: line, range: match.range(at: 1)),
-              let seconds = string(in: line, range: match.range(at: 2)) else {
+              let seconds = string(in: line, range: match.range(at: 2))
+        else {
             return nil
         }
 
@@ -345,7 +348,7 @@ public extension ParsedLyrics {
     }
 }
 
-public extension Array where Element == LyricsRecord {
+public extension [LyricsRecord] {
     func syncedOnly() -> [LyricsRecord] {
         filter(\.hasSyncedLyrics)
     }
@@ -370,7 +373,7 @@ extension LyricsRecord {
         let expected = signature.normalized()
         var score = 0
 
-        score += Self.textScore(actual: trackName, expected: expected.trackName, exact: 1_000, partial: 500)
+        score += Self.textScore(actual: trackName, expected: expected.trackName, exact: 1000, partial: 500)
         score += Self.textScore(actual: artistName, expected: expected.artistName, exact: 700, partial: 350)
         score += Self.textScore(actual: albumName, expected: expected.albumName, exact: 300, partial: 150)
 

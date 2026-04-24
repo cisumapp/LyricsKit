@@ -101,7 +101,7 @@ public extension LyricsProvider {
     }
 
     func parsedLyrics(for signature: TrackSignature) async throws -> ParsedLyrics? {
-        (try await lyrics(for: signature)).parsedSyncedLyrics
+        try await (lyrics(for: signature)).parsedSyncedLyrics
     }
 
     func parsedLyrics(
@@ -110,7 +110,7 @@ public extension LyricsProvider {
         albumName: String,
         durationInSeconds: Int
     ) async throws -> ParsedLyrics? {
-        (try await lyrics(
+        try await (lyrics(
             trackName: trackName,
             artistName: artistName,
             albumName: albumName,
@@ -119,11 +119,11 @@ public extension LyricsProvider {
     }
 
     func parsedLyrics(id: Int) async throws -> ParsedLyrics? {
-        (try await lyrics(id: id)).parsedSyncedLyrics
+        try await (lyrics(id: id)).parsedSyncedLyrics
     }
 
     func parsedBestLyrics(for signature: TrackSignature) async throws -> ParsedLyrics? {
-        (try await searchBestMatch(for: signature))?.parsedSyncedLyrics
+        try await (searchBestMatch(for: signature))?.parsedSyncedLyrics
     }
 
     func parsedBestLyrics(
@@ -132,7 +132,7 @@ public extension LyricsProvider {
         albumName: String,
         durationInSeconds: Int
     ) async throws -> ParsedLyrics? {
-        (try await searchBestMatch(
+        try await (searchBestMatch(
             trackName: trackName,
             artistName: artistName,
             albumName: albumName,
@@ -141,7 +141,7 @@ public extension LyricsProvider {
     }
 
     func lyricLines(for signature: TrackSignature) async throws -> [LyricLine]? {
-        (try await parsedLyrics(for: signature))?.lines
+        try await (parsedLyrics(for: signature))?.lines
     }
 
     func lyricLines(
@@ -150,7 +150,7 @@ public extension LyricsProvider {
         albumName: String,
         durationInSeconds: Int
     ) async throws -> [LyricLine]? {
-        (try await parsedLyrics(
+        try await (parsedLyrics(
             trackName: trackName,
             artistName: artistName,
             albumName: albumName,

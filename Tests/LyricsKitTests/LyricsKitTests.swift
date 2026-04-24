@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import LyricsKit
+import Testing
 
 private final class RecordingURLProtocol: URLProtocol {
     private struct Registration {
@@ -32,7 +32,7 @@ private final class RecordingURLProtocol: URLProtocol {
         lock.unlock()
     }
 
-    override class func canInit(with request: URLRequest) -> Bool {
+    override class func canInit(with _: URLRequest) -> Bool {
         true
     }
 
@@ -91,7 +91,7 @@ private final class RecordingURLProtocol: URLProtocol {
             URLQueryItem(name: "track_name", value: "I Want to Live"),
             URLQueryItem(name: "artist_name", value: "Borislav Slavov"),
             URLQueryItem(name: "album_name", value: "Baldur's Gate 3 (Original Game Soundtrack)"),
-            URLQueryItem(name: "duration", value: "233")
+            URLQueryItem(name: "duration", value: "233"),
         ])
 
         return (httpResponse(url: request.url!, statusCode: 200), expectedJSON)
@@ -104,7 +104,7 @@ private final class RecordingURLProtocol: URLProtocol {
         durationInSeconds: 233
     )
 
-    #expect(record.id == 3396226)
+    #expect(record.id == 3_396_226)
     #expect(record.trackName == "I Want to Live")
     #expect(record.parsedSyncedLyrics?.lines.count == 2)
     #expect(record.parsedSyncedLyrics?.line(at: 1.5)?.text == "I feel your breath upon my neck")
@@ -172,7 +172,7 @@ private final class RecordingURLProtocol: URLProtocol {
         let queryItems = try #require(components.queryItems)
         #expect(queryItems == [
             URLQueryItem(name: "q", value: "portal"),
-            URLQueryItem(name: "artist_name", value: "Jonathan Coulton")
+            URLQueryItem(name: "artist_name", value: "Jonathan Coulton"),
         ])
 
         return (httpResponse(url: request.url!, statusCode: 200), expectedJSON)
@@ -185,9 +185,23 @@ private final class RecordingURLProtocol: URLProtocol {
 }
 
 @Test func lyricsKitBestLyricsPrefersSyncedSearchResult() async throws {
-        let directJSON = """
+    let directJSON = """
+    {
+        "id": 100,
+        "trackName": "I Want to Live",
+        "artistName": "Borislav Slavov",
+        "albumName": "Baldur's Gate 3 (Original Game Soundtrack)",
+        "duration": 233,
+        "instrumental": false,
+        "plainLyrics": "I feel your breath upon my neck",
+        "syncedLyrics": null
+    }
+    """.data(using: .utf8)!
+
+    let searchJSON = """
+    [
         {
-            "id": 100,
+            "id": 101,
             "trackName": "I Want to Live",
             "artistName": "Borislav Slavov",
             "albumName": "Baldur's Gate 3 (Original Game Soundtrack)",
@@ -195,56 +209,42 @@ private final class RecordingURLProtocol: URLProtocol {
             "instrumental": false,
             "plainLyrics": "I feel your breath upon my neck",
             "syncedLyrics": null
+        },
+        {
+            "id": 102,
+            "trackName": "I Want to Live",
+            "artistName": "Borislav Slavov",
+            "albumName": "Baldur's Gate 3 (Original Game Soundtrack)",
+            "duration": 235,
+            "instrumental": false,
+            "plainLyrics": "I feel your breath upon my neck",
+            "syncedLyrics": "[00:01.00] I feel your breath upon my neck\\n[00:02.50] The clock won't stop"
         }
-        """.data(using: .utf8)!
+    ]
+    """.data(using: .utf8)!
 
-        let searchJSON = """
-        [
-            {
-                "id": 101,
-                "trackName": "I Want to Live",
-                "artistName": "Borislav Slavov",
-                "albumName": "Baldur's Gate 3 (Original Game Soundtrack)",
-                "duration": 233,
-                "instrumental": false,
-                "plainLyrics": "I feel your breath upon my neck",
-                "syncedLyrics": null
-            },
-            {
-                "id": 102,
-                "trackName": "I Want to Live",
-                "artistName": "Borislav Slavov",
-                "albumName": "Baldur's Gate 3 (Original Game Soundtrack)",
-                "duration": 235,
-                "instrumental": false,
-                "plainLyrics": "I feel your breath upon my neck",
-                "syncedLyrics": "[00:01.00] I feel your breath upon my neck\\n[00:02.50] The clock won't stop"
-            }
-        ]
-        """.data(using: .utf8)!
+    let fixture = makeClient { request in
+        let components = try #require(URLComponents(url: request.url!, resolvingAgainstBaseURL: false))
 
-        let fixture = makeClient { request in
-                let components = try #require(URLComponents(url: request.url!, resolvingAgainstBaseURL: false))
-
-                switch components.path {
-                case "/api/get":
-                        return (httpResponse(url: request.url!, statusCode: 200), directJSON)
-                case "/api/search":
-                        return (httpResponse(url: request.url!, statusCode: 200), searchJSON)
-                default:
-                        throw URLError(.badURL)
-                }
+        switch components.path {
+        case "/api/get":
+            return (httpResponse(url: request.url!, statusCode: 200), directJSON)
+        case "/api/search":
+            return (httpResponse(url: request.url!, statusCode: 200), searchJSON)
+        default:
+            throw URLError(.badURL)
         }
+    }
 
-        let record = try await fixture.kit.bestLyrics(
-                trackName: "I Want to Live",
-                artistName: "Borislav Slavov",
-                albumName: "Baldur's Gate 3 (Original Game Soundtrack)",
-                durationInSeconds: 233
-        )
+    let record = try await fixture.kit.bestLyrics(
+        trackName: "I Want to Live",
+        artistName: "Borislav Slavov",
+        albumName: "Baldur's Gate 3 (Original Game Soundtrack)",
+        durationInSeconds: 233
+    )
 
-        #expect(record?.id == 102)
-        #expect(record?.hasSyncedLyrics == true)
+    #expect(record?.id == 102)
+    #expect(record?.hasSyncedLyrics == true)
 }
 
 @Test func lyricsRecordDecodesFractionalDurationValues() throws {
@@ -261,48 +261,48 @@ private final class RecordingURLProtocol: URLProtocol {
         }
     """#.data(using: .utf8)!
 
-        let record = try JSONDecoder().decode(LyricsRecord.self, from: json)
+    let record = try JSONDecoder().decode(LyricsRecord.self, from: json)
 
-        #expect(record.duration == 341)
-        #expect(record.parsedSyncedLyrics?.lines.count == 2)
+    #expect(record.duration == 341)
+    #expect(record.parsedSyncedLyrics?.lines.count == 2)
 }
 
 @Test func searchSyncedFiltersUnsyncedResults() async throws {
-        let searchJSON = """
-        [
-            {
-                "id": 201,
-                "trackName": "Still Alive",
-                "artistName": "Jonathan Coulton",
-                "albumName": "Portal",
-                "duration": 182,
-                "instrumental": false,
-                "plainLyrics": "This was a triumph",
-                "syncedLyrics": null
-            },
-            {
-                "id": 202,
-                "trackName": "Still Alive",
-                "artistName": "Jonathan Coulton",
-                "albumName": "Portal",
-                "duration": 182,
-                "instrumental": false,
-                "plainLyrics": "This was a triumph",
-                "syncedLyrics": "[00:01.00] This was a triumph"
-            }
-        ]
-        """.data(using: .utf8)!
-
-        let fixture = makeClient { request in
-                let components = try #require(URLComponents(url: request.url!, resolvingAgainstBaseURL: false))
-                #expect(components.path == "/api/search")
-                return (httpResponse(url: request.url!, statusCode: 200), searchJSON)
+    let searchJSON = """
+    [
+        {
+            "id": 201,
+            "trackName": "Still Alive",
+            "artistName": "Jonathan Coulton",
+            "albumName": "Portal",
+            "duration": 182,
+            "instrumental": false,
+            "plainLyrics": "This was a triumph",
+            "syncedLyrics": null
+        },
+        {
+            "id": 202,
+            "trackName": "Still Alive",
+            "artistName": "Jonathan Coulton",
+            "albumName": "Portal",
+            "duration": 182,
+            "instrumental": false,
+            "plainLyrics": "This was a triumph",
+            "syncedLyrics": "[00:01.00] This was a triumph"
         }
+    ]
+    """.data(using: .utf8)!
 
-        let records = try await fixture.kit.searchSynced(trackName: "Still Alive", artistName: "Jonathan Coulton")
+    let fixture = makeClient { request in
+        let components = try #require(URLComponents(url: request.url!, resolvingAgainstBaseURL: false))
+        #expect(components.path == "/api/search")
+        return (httpResponse(url: request.url!, statusCode: 200), searchJSON)
+    }
 
-        #expect(records.count == 1)
-        #expect(records.first?.id == 202)
+    let records = try await fixture.kit.searchSynced(trackName: "Still Alive", artistName: "Jonathan Coulton")
+
+    #expect(records.count == 1)
+    #expect(records.first?.id == 202)
 }
 
 @Test func parsedLyricsParsesMultipleTimeTagsAndSupportsPlaybackLookup() throws {
@@ -313,13 +313,13 @@ private final class RecordingURLProtocol: URLProtocol {
 
     let lines = try #require(parsed?.lines)
     #expect(lines.map(\.timestamp) == [0.5, 1.25, 2.0])
-        #expect(parsed?.currentLine(at: 0.75)?.text == "Intro")
-        #expect(parsed?.nextLine(after: 0.75)?.text == "Intro")
-        #expect(parsed?.nextLine(after: 1.30)?.text == "Verse")
-        #expect(parsed?.previousLine(before: 2.50)?.text == "Verse")
-        #expect(parsed?.timeRange?.lowerBound == 0.5)
-        #expect(parsed?.timeRange?.upperBound == 2.0)
-        #expect(parsed?.progress(at: 1.0, within: 2.0) == 0.5)
+    #expect(parsed?.currentLine(at: 0.75)?.text == "Intro")
+    #expect(parsed?.nextLine(after: 0.75)?.text == "Intro")
+    #expect(parsed?.nextLine(after: 1.30)?.text == "Verse")
+    #expect(parsed?.previousLine(before: 2.50)?.text == "Verse")
+    #expect(parsed?.timeRange?.lowerBound == 0.5)
+    #expect(parsed?.timeRange?.upperBound == 2.0)
+    #expect(parsed?.progress(at: 1.0, within: 2.0) == 0.5)
 }
 
 @Test func rateLimiterSpreadsBackToBackRequests() async throws {
@@ -337,7 +337,7 @@ private final class RecordingURLProtocol: URLProtocol {
     """.data(using: .utf8)!
 
     let fixture = makeClient(minimumRequestInterval: 0.25) { request in
-        return (httpResponse(url: request.url!, statusCode: 200), expectedJSON)
+        (httpResponse(url: request.url!, statusCode: 200), expectedJSON)
     }
 
     let client = fixture.client
@@ -451,15 +451,15 @@ private struct MockLyricsProvider: LyricsProvider {
     let exactRecord: LyricsRecord
     let searchResults: [LyricsRecord]
 
-    func lyrics(for signature: TrackSignature) async throws -> LyricsRecord {
+    func lyrics(for _: TrackSignature) async throws -> LyricsRecord {
         exactRecord
     }
 
-    func lyrics(id: Int) async throws -> LyricsRecord {
+    func lyrics(id _: Int) async throws -> LyricsRecord {
         exactRecord
     }
 
-    func search(_ query: LyricsSearchQuery) async throws -> [LyricsRecord] {
+    func search(_: LyricsSearchQuery) async throws -> [LyricsRecord] {
         searchResults
     }
 }
