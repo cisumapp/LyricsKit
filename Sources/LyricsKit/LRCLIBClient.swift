@@ -219,6 +219,9 @@ public actor LRCLIBClient {
         try Task.checkCancellation()
 
         let request = try makeRequest(for: endpoint)
+        if let url = request.url {
+            LyricsDebugLogger.log("Sending request to LRCLIB: \(url.path)")
+        }
 
         do {
             let (data, response) = try await session.data(for: request)
@@ -226,23 +229,32 @@ public actor LRCLIBClient {
                 throw LyricsKitError.invalidResponse
             }
 
+            LyricsDebugLogger.log("LRCLIB response status: \(httpResponse.statusCode)")
+
             switch httpResponse.statusCode {
             case 200...299:
                 do {
-                    return try decoder.decode(T.self, from: data)
+                    let decoded = try decoder.decode(T.self, from: data)
+                    LyricsDebugLogger.log("LRCLIB request succeeded (\(data.count) bytes)")
+                    return decoded
                 } catch let decodingError as DecodingError {
+                    LyricsDebugLogger.log("LRCLIB decoding failed: \(decodingError.localizedDescription)")
                     throw LyricsKitError.decodingFailed(message: String(describing: decodingError))
                 } catch {
+                    LyricsDebugLogger.log("LRCLIB decoding failed: \(error.localizedDescription)")
                     throw LyricsKitError.decodingFailed(message: error.localizedDescription)
                 }
             case 404:
+                LyricsDebugLogger.log("LRCLIB resource not found")
                 throw LyricsKitError.notFound(Self.decodeErrorPayload(from: data, decoder: decoder))
             case 429:
                 let retryAfter = Self.retryAfterSeconds(from: httpResponse)
+                LyricsDebugLogger.log("LRCLIB rate limited, retry after: \(retryAfter ?? 0)s")
                 let payload = Self.decodeErrorPayload(from: data, decoder: decoder)
                 await rateLimiter.penalize(retryAfter: retryAfter)
                 throw LyricsKitError.rateLimited(retryAfter: retryAfter, payload: payload)
             default:
+                LyricsDebugLogger.log("LRCLIB HTTP error: \(httpResponse.statusCode)")
                 throw LyricsKitError.httpError(
                     statusCode: httpResponse.statusCode,
                     payload: Self.decodeErrorPayload(from: data, decoder: decoder),
@@ -254,8 +266,10 @@ public actor LRCLIBClient {
         } catch let error as URLError where error.code == .cancelled {
             throw CancellationError()
         } catch let error as URLError {
+            LyricsDebugLogger.log("LRCLIB network error: \(error.localizedDescription)")
             throw LyricsKitError.transport(code: error.errorCode, message: error.localizedDescription)
         } catch {
+            LyricsDebugLogger.log("LRCLIB generic error: \(error.localizedDescription)")
             throw LyricsKitError.transport(code: (error as NSError).code, message: error.localizedDescription)
         }
     }
