@@ -67,7 +67,7 @@ public actor NetworkClient {
 
                 if httpResponse.statusCode != 200 {
                     if let errorString = String(data: data, encoding: .utf8) {
-                        print("❌ SDKit: Network Error (\(httpResponse.statusCode)): \(errorString)")
+                        LyricsLog.debug(" SDKit: Network Error (\(httpResponse.statusCode)): \(errorString)")
                     }
                     continuation.resume(throwing: URLError(.badServerResponse))
                     return
